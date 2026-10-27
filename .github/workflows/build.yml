@@ -29,6 +29,15 @@ jobs:
       - name: Nome do app
         run: sed -i 's/android:label="financas"/android:label="Finanças"/' android/app/src/main/AndroidManifest.xml
 
+      - name: Fonte com acentos e símbolos (€, R$) para os PDFs
+        run: |
+          mkdir -p assets/fonts
+          D=/usr/share/fonts/truetype/dejavu
+          if [ ! -f $D/DejaVuSans.ttf ]; then
+            sudo apt-get update -qq && sudo apt-get install -y -qq fonts-dejavu-core
+          fi
+          cp $D/DejaVuSans.ttf $D/DejaVuSans-Bold.ttf assets/fonts/
+
       - run: flutter pub get
       - run: flutter analyze --no-fatal-infos --no-fatal-warnings lib
       - run: flutter build apk --release

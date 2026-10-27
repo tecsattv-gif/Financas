@@ -4,6 +4,7 @@ import 'package:path_provider/path_provider.dart';
 import 'package:share_plus/share_plus.dart';
 import '../format.dart';
 import '../models.dart';
+import '../pdf_report.dart';
 import '../store.dart';
 import '../widgets/donut_chart.dart';
 import 'edit_screen.dart';
@@ -36,6 +37,69 @@ class _HomeScreenState extends State<HomeScreen> {
       context, MaterialPageRoute(builder: (_) => EditScreen(item: l)));
 
   Future<void> _exportar() async {
+    final opcao = await showModalBottomSheet<String>(
+      context: context,
+      builder: (ctx) => SafeArea(
+        child: Column(mainAxisSize: MainAxisSize.min, children: [
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 16, 16, 4),
+            child: Text('Exportar ${mesAno(_mes)} · ${moedaDe(store.moedaAtual).nome}',
+                style: Theme.of(ctx).textTheme.titleMedium),
+          ),
+          ListTile(
+            leading: const Icon(Icons.picture_as_pdf, color: Color(0xFFD64545)),
+            title: const Text('PDF — Receitas e despesas'),
+            subtitle: const Text('Relatório completo com saldo do mês'),
+            onTap: () => Navigator.pop(ctx, 'tudo'),
+          ),
+          ListTile(
+            leading: const Icon(Icons.arrow_downward, color: Color(0xFF2E9E5B)),
+            title: const Text('PDF — Só receitas'),
+            onTap: () => Navigator.pop(ctx, 'receitas'),
+          ),
+          ListTile(
+            leading: const Icon(Icons.arrow_upward, color: Color(0xFFD64545)),
+            title: const Text('PDF — Só despesas'),
+            onTap: () => Navigator.pop(ctx, 'despesas'),
+          ),
+          ListTile(
+            leading: const Icon(Icons.table_chart_outlined),
+            title: const Text('Planilha (.csv)'),
+            subtitle: const Text('Para Excel ou Google Planilhas (todas as moedas)'),
+            onTap: () => Navigator.pop(ctx, 'csv'),
+          ),
+          const SizedBox(height: 8),
+        ]),
+      ),
+    );
+    if (opcao == null) return;
+    if (opcao == 'csv') return _exportarCsv();
+    final conteudo = switch (opcao) {
+      'receitas' => ConteudoPdf.receitas,
+      'despesas' => ConteudoPdf.despesas,
+      _ => ConteudoPdf.tudo,
+    };
+    final itens = store.doMes(_mes, moeda: store.moedaAtual);
+    final relevantes = switch (conteudo) {
+      ConteudoPdf.receitas => itens.where((l) => l.tipo == Tipo.receita),
+      ConteudoPdf.despesas => itens.where((l) => l.tipo == Tipo.despesa),
+      ConteudoPdf.tudo => itens,
+    };
+    if (relevantes.isEmpty) {
+      _aviso('Não há lançamentos em ${moedaDe(store.moedaAtual).nome} neste mês para exportar');
+      return;
+    }
+    try {
+      final f = await gerarPdf(
+          itens: itens, mes: _mes, codigoMoeda: store.moedaAtual, conteudo: conteudo);
+      await Share.shareXFiles([XFile(f.path, mimeType: 'application/pdf')],
+          subject: 'Finanças - ${mesAno(_mes)}');
+    } catch (e) {
+      _aviso('Não foi possível gerar o PDF');
+    }
+  }
+
+  Future<void> _exportarCsv() async {
     final itens = store.doMes(_mes);
     if (itens.isEmpty) {
       _aviso('Não há lançamentos neste mês para exportar');
@@ -46,7 +110,7 @@ class _HomeScreenState extends State<HomeScreen> {
         'Financas ${_mes.year}-${_mes.month.toString().padLeft(2, '0')}.csv';
     final f = File('${dir.path}/$nome');
     // BOM para o Excel reconhecer os acentos.
-    await f.writeAsString('﻿${store.csv(itens)}');
+    await f.writeAsString('\uFEFF${store.csv(itens)}');
     await Share.shareXFiles([XFile(f.path, mimeType: 'text/csv')],
         subject: 'Finanças - ${mesAno(_mes)}');
   }
@@ -71,7 +135,7 @@ class _HomeScreenState extends State<HomeScreen> {
         title: const Text('Finanças'),
         actions: [
           IconButton(
-            tooltip: 'Exportar planilha do mês',
+            tooltip: 'Exportar (PDF ou planilha)',
             icon: const Icon(Icons.ios_share),
             onPressed: _exportar,
           ),
@@ -81,7 +145,9 @@ class _HomeScreenState extends State<HomeScreen> {
       body: ListenableBuilder(
         listenable: store,
         builder: (context, _) {
-          final itens = store.doMes(_mes);
+          final cod = store.moedaAtual;
+          final itens = store.doMes(_mes, moeda: cod);
+          final comDados = store.moedasDoMes(_mes);
           return ListView(
             padding: const EdgeInsets.fromLTRB(16, 4, 16, 96),
             children: [
@@ -89,8 +155,25 @@ class _HomeScreenState extends State<HomeScreen> {
                   mes: _mes,
                   onAnterior: () => _mudarMes(-1),
                   onProximo: () => _mudarMes(1)),
+              const SizedBox(height: 4),
+              SegmentedButton<String>(
+                showSelectedIcon: false,
+                segments: [
+                  for (final m in moedas)
+                    ButtonSegment(
+                      value: m.codigo,
+                      label: Text(m.simbolo),
+                      // Ponto = há lançamentos nessa moeda neste mês.
+                      icon: comDados.contains(m.codigo) && m.codigo != cod
+                          ? const Icon(Icons.circle, size: 8)
+                          : null,
+                    ),
+                ],
+                selected: {cod},
+                onSelectionChanged: (s) => store.trocarMoeda(s.first),
+              ),
               const SizedBox(height: 8),
-              _Resumo(itens: itens),
+              _Resumo(itens: itens, codigo: cod),
               const SizedBox(height: 12),
               _Grafico(itens: itens),
               const SizedBox(height: 8),
@@ -125,7 +208,7 @@ class _HomeScreenState extends State<HomeScreen> {
               child: Text(diaTitulo(d),
                   style: Theme.of(context).textTheme.labelLarge),
             ),
-            Text(moeda(totalDia),
+            Text(moeda(totalDia, store.moedaAtual),
                 style: Theme.of(context).textTheme.labelMedium),
           ]),
         ));
@@ -170,8 +253,9 @@ class _SeletorMes extends StatelessWidget {
 }
 
 class _Resumo extends StatelessWidget {
-  const _Resumo({required this.itens});
+  const _Resumo({required this.itens, required this.codigo});
   final List<Lancamento> itens;
+  final String codigo;
 
   @override
   Widget build(BuildContext context) {
@@ -189,10 +273,10 @@ class _Resumo extends StatelessWidget {
       child: Padding(
         padding: const EdgeInsets.all(18),
         child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-          Text('Saldo do mês',
+          Text('Saldo do mês · ${moedaDe(codigo).nome}',
               style: TextStyle(color: cs.onPrimaryContainer)),
           const SizedBox(height: 4),
-          Text(moeda(saldo),
+          Text(moeda(saldo, codigo),
               style: Theme.of(context).textTheme.headlineMedium?.copyWith(
                   fontWeight: FontWeight.bold,
                   color: saldo < 0 ? cs.error : cs.onPrimaryContainer)),
@@ -203,6 +287,7 @@ class _Resumo extends StatelessWidget {
                     icone: Icons.arrow_downward,
                     rotulo: 'Receitas',
                     valor: receitas,
+                    codigo: codigo,
                     cor: const Color(0xFF2E9E5B))),
             const SizedBox(width: 12),
             Expanded(
@@ -210,6 +295,7 @@ class _Resumo extends StatelessWidget {
                     icone: Icons.arrow_upward,
                     rotulo: 'Despesas',
                     valor: despesas,
+                    codigo: codigo,
                     cor: const Color(0xFFD64545))),
           ]),
         ]),
@@ -223,10 +309,12 @@ class _Mini extends StatelessWidget {
       {required this.icone,
       required this.rotulo,
       required this.valor,
+      required this.codigo,
       required this.cor});
   final IconData icone;
   final String rotulo;
   final double valor;
+  final String codigo;
   final Color cor;
 
   @override
@@ -250,7 +338,7 @@ class _Mini extends StatelessWidget {
             FittedBox(
               fit: BoxFit.scaleDown,
               alignment: Alignment.centerLeft,
-              child: Text(moeda(valor),
+              child: Text(moeda(valor, codigo),
                   style: const TextStyle(fontWeight: FontWeight.w600)),
             ),
           ]),
@@ -366,7 +454,7 @@ class _ItemLancamento extends StatelessWidget {
               overflow: TextOverflow.ellipsis),
           subtitle: item.descricao.isEmpty ? null : Text(cat.nome),
           trailing: Text(
-            '${receita ? '+' : '-'} ${moeda(item.valor)}',
+            '${receita ? '+' : '-'} ${moeda(item.valor, item.moeda)}',
             style: TextStyle(
                 fontWeight: FontWeight.w600,
                 color: receita

@@ -19,6 +19,7 @@ class _EditScreenState extends State<EditScreen> {
   late Tipo _tipo;
   late DateTime _data;
   late String _categoria;
+  late String _moeda;
   final _valor = TextEditingController();
   final _descricao = TextEditingController();
   String? _erro;
@@ -32,6 +33,7 @@ class _EditScreenState extends State<EditScreen> {
     _tipo = it?.tipo ?? widget.tipo ?? Tipo.despesa;
     _data = it?.data ?? widget.data ?? DateTime.now();
     _categoria = it?.categoria ?? categoriasDe(_tipo).first.nome;
+    _moeda = it?.moeda ?? store.moedaAtual;
     if (it != null) {
       _valor.text = it.valor.toStringAsFixed(2).replaceAll('.', ',');
       _descricao.text = it.descricao;
@@ -79,6 +81,7 @@ class _EditScreenState extends State<EditScreen> {
       descricao: _descricao.text.trim(),
       categoria: _categoria,
       data: _data,
+      moeda: _moeda,
     ));
     if (mounted) Navigator.pop(context);
   }
@@ -102,6 +105,42 @@ class _EditScreenState extends State<EditScreen> {
     if (ok != true) return;
     await store.remover(widget.item!.id);
     if (mounted) Navigator.pop(context);
+  }
+
+  Future<void> _novaCategoria() async {
+    final nome = await showDialog<String>(
+      context: context,
+      builder: (_) => _NovaCategoriaDialog(tipo: _tipo),
+    );
+    if (nome != null && mounted) setState(() => _categoria = nome);
+  }
+
+  Future<void> _opcoesCategoria(Categoria c) async {
+    if (!c.personalizada) return;
+    final usos = store.usoDaCategoria(c.nome, _tipo);
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text('Apagar a categoria "${c.nome}"?'),
+        content: Text(usos == 0
+            ? 'Nenhum lançamento usa esta categoria.'
+            : '$usos lançamento(s) usam esta categoria e passarão para "Outros".'),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: const Text('Cancelar')),
+          FilledButton(
+              onPressed: () => Navigator.pop(ctx, true),
+              child: const Text('Apagar')),
+        ],
+      ),
+    );
+    if (ok != true) return;
+    await store.apagarCategoria(c.nome, _tipo);
+    if (!mounted) return;
+    setState(() {
+      if (_categoria == c.nome) _categoria = 'Outros';
+    });
   }
 
   @override
@@ -151,11 +190,21 @@ class _EditScreenState extends State<EditScreen> {
             },
             decoration: InputDecoration(
               labelText: 'Valor',
-              prefixText: 'R\$ ',
+              prefixText: '${moedaDe(_moeda).simbolo} ',
               hintText: '0,00',
               errorText: _erro,
               border: const OutlineInputBorder(),
             ),
+          ),
+          const SizedBox(height: 10),
+          SegmentedButton<String>(
+            showSelectedIcon: false,
+            segments: [
+              for (final m in moedas)
+                ButtonSegment(value: m.codigo, label: Text('${m.simbolo} ${m.nome}')),
+            ],
+            selected: {_moeda},
+            onSelectionChanged: (s) => setState(() => _moeda = s.first),
           ),
           const SizedBox(height: 12),
           TextField(
@@ -177,21 +226,36 @@ class _EditScreenState extends State<EditScreen> {
             onTap: _escolherData,
           ),
           const SizedBox(height: 8),
-          Text('Categoria', style: Theme.of(context).textTheme.titleSmall),
+          Row(children: [
+            Expanded(
+                child: Text('Categoria',
+                    style: Theme.of(context).textTheme.titleSmall)),
+            Text('Segure uma categoria criada por você para apagar',
+                style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                    color: Theme.of(context).colorScheme.outline)),
+          ]),
           const SizedBox(height: 8),
           Wrap(
             spacing: 8,
             runSpacing: 8,
             children: [
               for (final c in categoriasDe(_tipo))
-                ChoiceChip(
-                  avatar: Icon(c.icone,
-                      size: 18,
-                      color: _categoria == c.nome ? null : c.cor),
-                  label: Text(c.nome),
-                  selected: _categoria == c.nome,
-                  onSelected: (_) => setState(() => _categoria = c.nome),
+                GestureDetector(
+                  onLongPress: () => _opcoesCategoria(c),
+                  child: ChoiceChip(
+                    avatar: Icon(c.icone,
+                        size: 18,
+                        color: _categoria == c.nome ? null : c.cor),
+                    label: Text(c.nome),
+                    selected: _categoria == c.nome,
+                    onSelected: (_) => setState(() => _categoria = c.nome),
+                  ),
                 ),
+              ActionChip(
+                avatar: const Icon(Icons.add, size: 18),
+                label: const Text('Nova categoria'),
+                onPressed: _novaCategoria,
+              ),
             ],
           ),
           const SizedBox(height: 28),
@@ -204,6 +268,121 @@ class _EditScreenState extends State<EditScreen> {
           ),
         ],
       ),
+    );
+  }
+}
+
+/// Diálogo para criar uma categoria: nome, ícone e cor.
+class _NovaCategoriaDialog extends StatefulWidget {
+  const _NovaCategoriaDialog({required this.tipo});
+  final Tipo tipo;
+
+  @override
+  State<_NovaCategoriaDialog> createState() => _NovaCategoriaDialogState();
+}
+
+class _NovaCategoriaDialogState extends State<_NovaCategoriaDialog> {
+  final _nome = TextEditingController();
+  int _icone = 0;
+  int _cor = 5;
+  String? _erro;
+
+  @override
+  void dispose() {
+    _nome.dispose();
+    super.dispose();
+  }
+
+  Future<void> _criar() async {
+    final erro = await store.criarCategoria(_nome.text, widget.tipo, _icone, _cor);
+    if (!mounted) return;
+    if (erro != null) {
+      setState(() => _erro = erro);
+    } else {
+      Navigator.pop(context, _nome.text.trim());
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final cor = coresCategoria[_cor];
+    return AlertDialog(
+      title: Text(widget.tipo == Tipo.receita
+          ? 'Nova categoria de receita'
+          : 'Nova categoria de despesa'),
+      content: SingleChildScrollView(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            TextField(
+              controller: _nome,
+              autofocus: true,
+              maxLength: 30,
+              textCapitalization: TextCapitalization.sentences,
+              onChanged: (_) {
+                if (_erro != null) setState(() => _erro = null);
+              },
+              onSubmitted: (_) => _criar(),
+              decoration: InputDecoration(
+                labelText: 'Nome',
+                hintText: 'Ex.: Pets, Combustível',
+                errorText: _erro,
+                prefixIcon: Icon(iconesCategoria[_icone], color: cor),
+                border: const OutlineInputBorder(),
+              ),
+            ),
+            const SizedBox(height: 8),
+            Text('Ícone', style: Theme.of(context).textTheme.labelLarge),
+            const SizedBox(height: 6),
+            Wrap(
+              spacing: 6,
+              runSpacing: 6,
+              children: [
+                for (var i = 0; i < iconesCategoria.length; i++)
+                  InkWell(
+                    borderRadius: BorderRadius.circular(20),
+                    onTap: () => setState(() => _icone = i),
+                    child: CircleAvatar(
+                      radius: 18,
+                      backgroundColor:
+                          i == _icone ? cor : cor.withOpacity(0.12),
+                      child: Icon(iconesCategoria[i],
+                          size: 18, color: i == _icone ? Colors.white : cor),
+                    ),
+                  ),
+              ],
+            ),
+            const SizedBox(height: 12),
+            Text('Cor', style: Theme.of(context).textTheme.labelLarge),
+            const SizedBox(height: 6),
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: [
+                for (var i = 0; i < coresCategoria.length; i++)
+                  InkWell(
+                    borderRadius: BorderRadius.circular(16),
+                    onTap: () => setState(() => _cor = i),
+                    child: CircleAvatar(
+                      radius: 14,
+                      backgroundColor: coresCategoria[i],
+                      child: i == _cor
+                          ? const Icon(Icons.check, size: 16, color: Colors.white)
+                          : null,
+                    ),
+                  ),
+              ],
+            ),
+          ],
+        ),
+      ),
+      actions: [
+        TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Cancelar')),
+        FilledButton(onPressed: _criar, child: const Text('Criar')),
+      ],
     );
   }
 }
