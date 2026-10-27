@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'backup.dart';
 import 'models.dart';
 
 /// Guarda os lançamentos, as categorias criadas e a moeda escolhida no próprio celular.
@@ -19,6 +20,7 @@ class Store extends ChangeNotifier {
     notifyListeners();
     final p = await SharedPreferences.getInstance();
     await p.setString(_keyNome, _nome);
+    _backup();
   }
   final List<Lancamento> _itens = [];
   String _moedaAtual = 'BRL';
@@ -59,12 +61,14 @@ class Store extends ChangeNotifier {
   Future<void> _persist() async {
     final p = await SharedPreferences.getInstance();
     await p.setString(_key, jsonEncode(_itens.map((e) => e.toJson()).toList()));
+    _backup();
   }
 
   Future<void> _persistCategorias() async {
     final p = await SharedPreferences.getInstance();
     await p.setString(
         _keyCategorias, jsonEncode(categoriasExtras.map((e) => e.toJson()).toList()));
+    _backup();
   }
 
   Future<void> trocarMoeda(String codigo) async {
@@ -72,6 +76,53 @@ class Store extends ChangeNotifier {
     notifyListeners();
     final p = await SharedPreferences.getInstance();
     await p.setString(_keyMoeda, _moedaAtual);
+    _backup();
+  }
+
+  // --- Backup ----------------------------------------------------------------
+
+  /// Se não há nada guardado (instalação nova).
+  bool get vazio => _itens.isEmpty && categoriasExtras.isEmpty && _nome.isEmpty;
+
+  Map<String, dynamic> _dadosBackup() => {
+        'app': 'financas',
+        'versao': 1,
+        'criado': DateTime.now().toIso8601String(),
+        'lancamentos': _itens.map((e) => e.toJson()).toList(),
+        'categorias': categoriasExtras.map((e) => e.toJson()).toList(),
+        'moeda': _moedaAtual,
+        'nome': _nome,
+      };
+
+  void _backup() => backup.salvar(_dadosBackup());
+
+  /// Substitui todos os dados pelos do backup.
+  /// Devolve a quantidade de lançamentos restaurados, ou lança FormatException.
+  Future<int> restaurar(String conteudo) async {
+    final Map<String, dynamic> d;
+    try {
+      d = Map<String, dynamic>.from(jsonDecode(conteudo) as Map);
+    } catch (_) {
+      throw const FormatException('Este arquivo não é um backup do Finanças');
+    }
+    if (d['app'] != 'financas' || d['lancamentos'] is! List) {
+      throw const FormatException('Este arquivo não é um backup do Finanças');
+    }
+    final itens = (d['lancamentos'] as List)
+        .map((e) => Lancamento.fromJson(Map<String, dynamic>.from(e as Map)))
+        .toList();
+    final cats = ((d['categorias'] as List?) ?? const [])
+        .map((e) => CategoriaExtra.fromJson(Map<String, dynamic>.from(e as Map)))
+        .toList();
+    final p = await SharedPreferences.getInstance();
+    await p.setString(_key, jsonEncode(itens.map((e) => e.toJson()).toList()));
+    await p.setString(
+        _keyCategorias, jsonEncode(cats.map((e) => e.toJson()).toList()));
+    await p.setString(_keyMoeda, (d['moeda'] as String?) ?? 'BRL');
+    await p.setString(_keyNome, (d['nome'] as String?) ?? '');
+    await load();
+    _backup();
+    return itens.length;
   }
 
   List<Lancamento> doMes(DateTime mes) => _itens

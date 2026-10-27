@@ -32,6 +32,9 @@ jobs:
           sed -i 's/android:label="financas"/android:label="Finanças"/' $M
           grep -q 'android.permission.INTERNET' $M || \
             sed -i 's#<application#<uses-permission android:name="android.permission.INTERNET"/>\n    <application#' $M
+          # Android 10: permite gravar o backup em Documentos/Financas
+          grep -q requestLegacyExternalStorage $M || \
+            sed -i 's#<application#<application android:requestLegacyExternalStorage="true"#' $M
           cat $M | head -8
 
       - name: Fonte com acentos e símbolos (€, R$) para os PDFs

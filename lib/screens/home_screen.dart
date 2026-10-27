@@ -2,6 +2,7 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:share_plus/share_plus.dart';
+import '../backup.dart';
 import '../format.dart';
 import '../models.dart';
 import '../pdf_report.dart';
@@ -17,6 +18,71 @@ class HomeScreen extends StatefulWidget {
 
 class _HomeScreenState extends State<HomeScreen> {
   DateTime _mes = DateTime(DateTime.now().year, DateTime.now().month);
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) => _oferecerRestauracao());
+  }
+
+  /// Na primeira abertura de uma instalação nova, oferece restaurar o backup.
+  Future<void> _oferecerRestauracao() async {
+    if (!store.vazio || await backup.jaPerguntou() || !mounted) return;
+    await backup.marcarPerguntou();
+    if (!mounted) return;
+    final restaurar = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        icon: const Icon(Icons.settings_backup_restore),
+        title: const Text('Restaurar backup?'),
+        content: const Text(
+            'Se você já usava o Finanças neste celular, o backup está na pasta '
+            '${Backup.pastaLegivel}.\n\nToque em Restaurar e escolha o arquivo '
+            'mais recente.'),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: const Text('Começar do zero')),
+          FilledButton(
+              onPressed: () => Navigator.pop(ctx, true),
+              child: const Text('Restaurar')),
+        ],
+      ),
+    );
+    if (restaurar == true) await _restaurar(confirmar: false);
+  }
+
+  Future<void> _restaurar({bool confirmar = true}) async {
+    if (confirmar && !store.vazio) {
+      final ok = await showDialog<bool>(
+        context: context,
+        builder: (ctx) => AlertDialog(
+          title: const Text('Restaurar backup'),
+          content: const Text('Os dados atuais serão substituídos pelos do '
+              'backup escolhido. Deseja continuar?'),
+          actions: [
+            TextButton(
+                onPressed: () => Navigator.pop(ctx, false),
+                child: const Text('Cancelar')),
+            FilledButton(
+                onPressed: () => Navigator.pop(ctx, true),
+                child: const Text('Escolher arquivo')),
+          ],
+        ),
+      );
+      if (ok != true) return;
+    }
+    try {
+      final conteudo = await backup.escolherArquivo();
+      if (conteudo == null) return;
+      final n = await store.restaurar(conteudo);
+      if (mounted) _aviso('Backup restaurado: $n lançamento${n == 1 ? '' : 's'}');
+    } on FormatException catch (e) {
+      if (mounted) _aviso(e.message);
+    } catch (_) {
+      if (mounted) _aviso('Não foi possível ler o backup');
+    }
+  }
 
   void _mudarMes(int delta) =>
       setState(() => _mes = DateTime(_mes.year, _mes.month + delta));
@@ -175,6 +241,22 @@ class _HomeScreenState extends State<HomeScreen> {
             tooltip: 'Exportar (PDF ou planilha)',
             icon: const Icon(Icons.ios_share),
             onPressed: _exportar,
+          ),
+          PopupMenuButton<String>(
+            onSelected: (v) {
+              if (v == 'restaurar') _restaurar();
+            },
+            itemBuilder: (_) => const [
+              PopupMenuItem(
+                value: 'restaurar',
+                child: ListTile(
+                  contentPadding: EdgeInsets.zero,
+                  leading: Icon(Icons.settings_backup_restore),
+                  title: Text('Restaurar backup'),
+                  subtitle: Text('Backup automático em ${Backup.pastaLegivel}'),
+                ),
+              ),
+            ],
           ),
         ],
       ),
