@@ -318,14 +318,11 @@ class _EditScreenState extends State<EditScreen> {
             onTap: _escolherData,
           ),
           const SizedBox(height: 8),
-          Row(children: [
-            Expanded(
-                child: Text('Categoria',
-                    style: Theme.of(context).textTheme.titleSmall)),
-            Text('Segure uma categoria criada por você para apagar',
-                style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                    color: Theme.of(context).colorScheme.outline)),
-          ]),
+          Text('Categoria', style: Theme.of(context).textTheme.titleSmall),
+          const SizedBox(height: 2),
+          Text('Segure uma categoria criada por você para apagar',
+              style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                  color: Theme.of(context).colorScheme.outline)),
           const SizedBox(height: 8),
           Wrap(
             spacing: 8,
