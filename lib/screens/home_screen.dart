@@ -90,7 +90,8 @@ class _HomeScreenState extends State<HomeScreen> {
       return;
     }
     try {
-      final f = await gerarPdf(itens: itens, mes: _mes, conteudo: conteudo);
+      final f = await gerarPdf(
+          itens: itens, mes: _mes, conteudo: conteudo, nomeUsuario: store.nomeUsuario);
       await Share.shareXFiles([XFile(f.path, mimeType: 'application/pdf')],
           subject: 'Finanças - ${mesAno(_mes)}');
     } catch (e) {
@@ -114,6 +115,38 @@ class _HomeScreenState extends State<HomeScreen> {
         subject: 'Finanças - ${mesAno(_mes)}');
   }
 
+  Future<void> _configurarNome() async {
+    final ctrl = TextEditingController(text: store.nomeUsuario);
+    final nome = await showDialog<String>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Seu nome'),
+        content: TextField(
+          controller: ctrl,
+          autofocus: true,
+          maxLength: 60,
+          textCapitalization: TextCapitalization.words,
+          onSubmitted: (v) => Navigator.pop(ctx, v),
+          decoration: const InputDecoration(
+            labelText: 'Nome',
+            helperText: 'Aparece no topo dos relatórios em PDF',
+            border: OutlineInputBorder(),
+          ),
+        ),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.pop(ctx), child: const Text('Cancelar')),
+          FilledButton(
+              onPressed: () => Navigator.pop(ctx, ctrl.text),
+              child: const Text('Salvar')),
+        ],
+      ),
+    );
+    if (nome == null) return;
+    await store.salvarNome(nome);
+    if (mounted) _aviso(nome.trim().isEmpty ? 'Nome removido' : 'Nome salvo');
+  }
+
   void _aviso(String m, {SnackBarAction? acao}) {
     final sm = ScaffoldMessenger.of(context);
     sm.hideCurrentSnackBar();
@@ -133,6 +166,11 @@ class _HomeScreenState extends State<HomeScreen> {
       appBar: AppBar(
         title: const Text('Finanças'),
         actions: [
+          IconButton(
+            tooltip: 'Seu nome (para os PDFs)',
+            icon: const Icon(Icons.person_outline),
+            onPressed: _configurarNome,
+          ),
           IconButton(
             tooltip: 'Exportar (PDF ou planilha)',
             icon: const Icon(Icons.ios_share),

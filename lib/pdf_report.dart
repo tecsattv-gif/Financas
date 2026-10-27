@@ -30,6 +30,7 @@ Future<File> gerarPdf({
   required List<Lancamento> itens,
   required DateTime mes,
   required ConteudoPdf conteudo,
+  String nomeUsuario = '',
 }) async {
   String fmt(double v) => moeda(v);
   final temEstrangeira = itens.any((l) => l.moeda != 'BRL');
@@ -165,7 +166,10 @@ Future<File> gerarPdf({
         ],
       ]);
 
-  final doc = pw.Document(theme: await _tema(), title: titulo, author: 'Finanças');
+  final doc = pw.Document(
+      theme: await _tema(),
+      title: titulo,
+      author: nomeUsuario.trim().isEmpty ? 'Finanças' : nomeUsuario.trim());
   doc.addPage(pw.MultiPage(
     pageFormat: PdfPageFormat.a4,
     margin: const pw.EdgeInsets.all(32),
@@ -177,6 +181,9 @@ Future<File> gerarPdf({
         pw.Text('Finanças', style: const pw.TextStyle(color: _cinza)),
       ]),
       pw.SizedBox(height: 2),
+      if (nomeUsuario.trim().isNotEmpty)
+        pw.Text('Nome: ${nomeUsuario.trim()}',
+            style: pw.TextStyle(fontSize: 12, fontWeight: pw.FontWeight.bold)),
       pw.Text(
           temEstrangeira
               ? '${mesAno(mes)} · valores convertidos para Real (cotação do dia de cada lançamento)'

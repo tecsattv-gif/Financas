@@ -8,6 +8,7 @@ App Flutter de controle financeiro pessoal.
 - Gráfico de despesas por categoria
 - Lançamentos em Dólar ou Euro são convertidos automaticamente para Real com a cotação do dia (guardada no lançamento; sem internet usa a última cotação ou permite digitar)
 - Saldo, gráfico e relatórios sempre em Real
+- Nome do usuário (ícone de pessoa no topo) impresso nos PDFs
 - Exportar o mês em PDF (receitas, despesas ou completo) ou planilha (.csv)
 - Dados guardados só no celular
 

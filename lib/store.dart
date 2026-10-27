@@ -8,6 +8,18 @@ class Store extends ChangeNotifier {
   static const _key = 'lancamentos_v1';
   static const _keyCategorias = 'categorias_v1';
   static const _keyMoeda = 'moeda_atual';
+  static const _keyNome = 'nome_usuario';
+  String _nome = '';
+
+  /// Nome do usuário (aparece nos PDFs).
+  String get nomeUsuario => _nome;
+
+  Future<void> salvarNome(String nome) async {
+    _nome = nome.trim();
+    notifyListeners();
+    final p = await SharedPreferences.getInstance();
+    await p.setString(_keyNome, _nome);
+  }
   final List<Lancamento> _itens = [];
   String _moedaAtual = 'BRL';
 
@@ -37,6 +49,7 @@ class Store extends ChangeNotifier {
       } catch (_) {}
     }
     _moedaAtual = moedaDe(p.getString(_keyMoeda) ?? 'BRL').codigo;
+    _nome = p.getString(_keyNome) ?? '';
     _ordenar();
     notifyListeners();
   }
