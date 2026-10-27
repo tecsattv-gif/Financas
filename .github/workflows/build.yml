@@ -1,0 +1,39 @@
+name: Build Android APK
+
+on:
+  push:
+    branches: [ main ]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+
+      - name: Gerar pasta android
+        run: |
+          flutter create --platforms=android --org com.tecsattv --project-name financas .
+          rm -f test/widget_test.dart
+
+      - name: Nome do app
+        run: sed -i 's/android:label="financas"/android:label="Finanças"/' android/app/src/main/AndroidManifest.xml
+
+      - run: flutter pub get
+      - run: flutter analyze --no-fatal-infos --no-fatal-warnings lib
+      - run: flutter build apk --release
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: financas-apk
+          path: build/app/outputs/flutter-apk/app-release.apk
