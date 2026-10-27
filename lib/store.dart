@@ -13,7 +13,7 @@ class Store extends ChangeNotifier {
 
   List<Lancamento> get todos => List.unmodifiable(_itens);
 
-  /// Moeda que está sendo vista na tela inicial (e padrão dos novos lançamentos).
+  /// Última moeda usada (padrão dos novos lançamentos).
   String get moedaAtual => _moedaAtual;
 
   Future<void> load() async {
@@ -61,16 +61,9 @@ class Store extends ChangeNotifier {
     await p.setString(_keyMoeda, _moedaAtual);
   }
 
-  List<Lancamento> doMes(DateTime mes, {String? moeda}) => _itens
-      .where((l) =>
-          l.data.year == mes.year &&
-          l.data.month == mes.month &&
-          (moeda == null || l.moeda == moeda))
+  List<Lancamento> doMes(DateTime mes) => _itens
+      .where((l) => l.data.year == mes.year && l.data.month == mes.month)
       .toList();
-
-  /// Moedas que têm lançamentos no mês (para mostrar um aviso nos botões).
-  Set<String> moedasDoMes(DateTime mes) =>
-      doMes(mes).map((l) => l.moeda).toSet();
 
   Future<void> salvar(Lancamento l) async {
     final i = _itens.indexWhere((e) => e.id == l.id);
@@ -125,6 +118,7 @@ class Store extends ChangeNotifier {
           categoria: 'Outros',
           data: l.data,
           moeda: l.moeda,
+          cotacao: l.cotacao,
         );
         mudou = true;
       }
@@ -137,14 +131,17 @@ class Store extends ChangeNotifier {
   /// Planilha simples (abre no Excel e no Google Planilhas).
   String csv(List<Lancamento> itens) {
     String q(String s) => '"${s.replaceAll('"', '""')}"';
-    final b = StringBuffer('Data;Tipo;Categoria;Descrição;Moeda;Valor\n');
+    String n(double v, [int casas = 2]) => v.toStringAsFixed(casas).replaceAll('.', ',');
+    final b = StringBuffer(
+        'Data;Tipo;Categoria;Descrição;Moeda;Valor original;Cotação (R\$);Valor em R\$\n');
     for (final l in itens) {
       final d = l.data;
       final data =
           '${d.day.toString().padLeft(2, '0')}/${d.month.toString().padLeft(2, '0')}/${d.year}';
-      final valor = l.comSinal.toStringAsFixed(2).replaceAll('.', ',');
-      b.writeln(
-          '$data;${l.tipo == Tipo.receita ? 'Receita' : 'Despesa'};${q(l.categoria)};${q(l.descricao)};${l.moeda};$valor');
+      final sinal = l.tipo == Tipo.receita ? 1 : -1;
+      b.writeln('$data;${l.tipo == Tipo.receita ? 'Receita' : 'Despesa'};'
+          '${q(l.categoria)};${q(l.descricao)};${l.moeda};${n(sinal * l.valor)};'
+          '${n(l.moeda == 'BRL' ? 1 : l.cotacao, 4)};${n(l.comSinal)}');
     }
     return b.toString();
   }

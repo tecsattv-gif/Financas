@@ -43,7 +43,7 @@ class _HomeScreenState extends State<HomeScreen> {
         child: Column(mainAxisSize: MainAxisSize.min, children: [
           Padding(
             padding: const EdgeInsets.fromLTRB(16, 16, 16, 4),
-            child: Text('Exportar ${mesAno(_mes)} · ${moedaDe(store.moedaAtual).nome}',
+            child: Text('Exportar ${mesAno(_mes)} (valores em Real)',
                 style: Theme.of(ctx).textTheme.titleMedium),
           ),
           ListTile(
@@ -65,7 +65,7 @@ class _HomeScreenState extends State<HomeScreen> {
           ListTile(
             leading: const Icon(Icons.table_chart_outlined),
             title: const Text('Planilha (.csv)'),
-            subtitle: const Text('Para Excel ou Google Planilhas (todas as moedas)'),
+            subtitle: const Text('Para Excel ou Google Planilhas'),
             onTap: () => Navigator.pop(ctx, 'csv'),
           ),
           const SizedBox(height: 8),
@@ -79,19 +79,18 @@ class _HomeScreenState extends State<HomeScreen> {
       'despesas' => ConteudoPdf.despesas,
       _ => ConteudoPdf.tudo,
     };
-    final itens = store.doMes(_mes, moeda: store.moedaAtual);
+    final itens = store.doMes(_mes);
     final relevantes = switch (conteudo) {
       ConteudoPdf.receitas => itens.where((l) => l.tipo == Tipo.receita),
       ConteudoPdf.despesas => itens.where((l) => l.tipo == Tipo.despesa),
       ConteudoPdf.tudo => itens,
     };
     if (relevantes.isEmpty) {
-      _aviso('Não há lançamentos em ${moedaDe(store.moedaAtual).nome} neste mês para exportar');
+      _aviso('Não há lançamentos neste mês para exportar');
       return;
     }
     try {
-      final f = await gerarPdf(
-          itens: itens, mes: _mes, codigoMoeda: store.moedaAtual, conteudo: conteudo);
+      final f = await gerarPdf(itens: itens, mes: _mes, conteudo: conteudo);
       await Share.shareXFiles([XFile(f.path, mimeType: 'application/pdf')],
           subject: 'Finanças - ${mesAno(_mes)}');
     } catch (e) {
@@ -145,9 +144,7 @@ class _HomeScreenState extends State<HomeScreen> {
       body: ListenableBuilder(
         listenable: store,
         builder: (context, _) {
-          final cod = store.moedaAtual;
-          final itens = store.doMes(_mes, moeda: cod);
-          final comDados = store.moedasDoMes(_mes);
+          final itens = store.doMes(_mes);
           return ListView(
             padding: const EdgeInsets.fromLTRB(16, 4, 16, 96),
             children: [
@@ -155,25 +152,8 @@ class _HomeScreenState extends State<HomeScreen> {
                   mes: _mes,
                   onAnterior: () => _mudarMes(-1),
                   onProximo: () => _mudarMes(1)),
-              const SizedBox(height: 4),
-              SegmentedButton<String>(
-                showSelectedIcon: false,
-                segments: [
-                  for (final m in moedas)
-                    ButtonSegment(
-                      value: m.codigo,
-                      label: Text(m.simbolo),
-                      // Ponto = há lançamentos nessa moeda neste mês.
-                      icon: comDados.contains(m.codigo) && m.codigo != cod
-                          ? const Icon(Icons.circle, size: 8)
-                          : null,
-                    ),
-                ],
-                selected: {cod},
-                onSelectionChanged: (s) => store.trocarMoeda(s.first),
-              ),
               const SizedBox(height: 8),
-              _Resumo(itens: itens, codigo: cod),
+              _Resumo(itens: itens),
               const SizedBox(height: 12),
               _Grafico(itens: itens),
               const SizedBox(height: 8),
@@ -208,7 +188,7 @@ class _HomeScreenState extends State<HomeScreen> {
               child: Text(diaTitulo(d),
                   style: Theme.of(context).textTheme.labelLarge),
             ),
-            Text(moeda(totalDia, store.moedaAtual),
+            Text(moeda(totalDia),
                 style: Theme.of(context).textTheme.labelMedium),
           ]),
         ));
@@ -253,19 +233,19 @@ class _SeletorMes extends StatelessWidget {
 }
 
 class _Resumo extends StatelessWidget {
-  const _Resumo({required this.itens, required this.codigo});
+  const _Resumo({required this.itens});
   final List<Lancamento> itens;
-  final String codigo;
 
   @override
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
     final receitas = itens
         .where((l) => l.tipo == Tipo.receita)
-        .fold<double>(0, (s, l) => s + l.valor);
+        .fold<double>(0, (s, l) => s + l.valorReal);
     final despesas = itens
         .where((l) => l.tipo == Tipo.despesa)
-        .fold<double>(0, (s, l) => s + l.valor);
+        .fold<double>(0, (s, l) => s + l.valorReal);
+    final estrangeiras = itens.any((l) => l.moeda != 'BRL');
     final saldo = receitas - despesas;
     return Card(
       elevation: 0,
@@ -273,10 +253,10 @@ class _Resumo extends StatelessWidget {
       child: Padding(
         padding: const EdgeInsets.all(18),
         child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-          Text('Saldo do mês · ${moedaDe(codigo).nome}',
+          Text(estrangeiras ? 'Saldo do mês (convertido para Real)' : 'Saldo do mês',
               style: TextStyle(color: cs.onPrimaryContainer)),
           const SizedBox(height: 4),
-          Text(moeda(saldo, codigo),
+          Text(moeda(saldo),
               style: Theme.of(context).textTheme.headlineMedium?.copyWith(
                   fontWeight: FontWeight.bold,
                   color: saldo < 0 ? cs.error : cs.onPrimaryContainer)),
@@ -287,7 +267,6 @@ class _Resumo extends StatelessWidget {
                     icone: Icons.arrow_downward,
                     rotulo: 'Receitas',
                     valor: receitas,
-                    codigo: codigo,
                     cor: const Color(0xFF2E9E5B))),
             const SizedBox(width: 12),
             Expanded(
@@ -295,7 +274,6 @@ class _Resumo extends StatelessWidget {
                     icone: Icons.arrow_upward,
                     rotulo: 'Despesas',
                     valor: despesas,
-                    codigo: codigo,
                     cor: const Color(0xFFD64545))),
           ]),
         ]),
@@ -309,12 +287,10 @@ class _Mini extends StatelessWidget {
       {required this.icone,
       required this.rotulo,
       required this.valor,
-      required this.codigo,
       required this.cor});
   final IconData icone;
   final String rotulo;
   final double valor;
-  final String codigo;
   final Color cor;
 
   @override
@@ -338,7 +314,7 @@ class _Mini extends StatelessWidget {
             FittedBox(
               fit: BoxFit.scaleDown,
               alignment: Alignment.centerLeft,
-              child: Text(moeda(valor, codigo),
+              child: Text(moeda(valor),
                   style: const TextStyle(fontWeight: FontWeight.w600)),
             ),
           ]),
@@ -356,7 +332,7 @@ class _Grafico extends StatelessWidget {
   Widget build(BuildContext context) {
     final porCat = <String, double>{};
     for (final l in itens.where((l) => l.tipo == Tipo.despesa)) {
-      porCat[l.categoria] = (porCat[l.categoria] ?? 0) + l.valor;
+      porCat[l.categoria] = (porCat[l.categoria] ?? 0) + l.valorReal;
     }
     if (porCat.isEmpty) return const SizedBox.shrink();
     final total = porCat.values.fold<double>(0, (s, v) => s + v);
@@ -453,13 +429,23 @@ class _ItemLancamento extends StatelessWidget {
               item.descricao.isEmpty ? cat.nome : item.descricao,
               overflow: TextOverflow.ellipsis),
           subtitle: item.descricao.isEmpty ? null : Text(cat.nome),
-          trailing: Text(
-            '${receita ? '+' : '-'} ${moeda(item.valor, item.moeda)}',
-            style: TextStyle(
-                fontWeight: FontWeight.w600,
-                color: receita
-                    ? const Color(0xFF2E9E5B)
-                    : const Color(0xFFD64545)),
+          trailing: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            crossAxisAlignment: CrossAxisAlignment.end,
+            children: [
+              Text(
+                '${receita ? '+' : '-'} ${moeda(item.valor, item.moeda)}',
+                style: TextStyle(
+                    fontWeight: FontWeight.w600,
+                    color: receita
+                        ? const Color(0xFF2E9E5B)
+                        : const Color(0xFFD64545)),
+              ),
+              if (item.moeda != 'BRL')
+                Text('≈ ${moeda(item.valorReal)}',
+                    style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                        color: Theme.of(context).colorScheme.outline)),
+            ],
           ),
         ),
       ),

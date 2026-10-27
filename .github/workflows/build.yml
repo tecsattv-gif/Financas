@@ -26,8 +26,13 @@ jobs:
           flutter create --platforms=android --org com.tecsattv --project-name financas .
           rm -f test/widget_test.dart
 
-      - name: Nome do app
-        run: sed -i 's/android:label="financas"/android:label="Finanças"/' android/app/src/main/AndroidManifest.xml
+      - name: Nome do app e permissão de internet (cotação do dólar/euro)
+        run: |
+          M=android/app/src/main/AndroidManifest.xml
+          sed -i 's/android:label="financas"/android:label="Finanças"/' $M
+          grep -q 'android.permission.INTERNET' $M || \
+            sed -i 's#<application#<uses-permission android:name="android.permission.INTERNET"/>\n    <application#' $M
+          cat $M | head -8
 
       - name: Fonte com acentos e símbolos (€, R$) para os PDFs
         run: |

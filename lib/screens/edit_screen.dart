@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import '../cambio.dart';
 import '../format.dart';
 import '../models.dart';
 import '../store.dart';
@@ -20,6 +21,9 @@ class _EditScreenState extends State<EditScreen> {
   late DateTime _data;
   late String _categoria;
   late String _moeda;
+  final _cotacao = TextEditingController();
+  String _infoCotacao = '';
+  bool _buscandoCotacao = false;
   final _valor = TextEditingController();
   final _descricao = TextEditingController();
   String? _erro;
@@ -34,14 +38,55 @@ class _EditScreenState extends State<EditScreen> {
     _data = it?.data ?? widget.data ?? DateTime.now();
     _categoria = it?.categoria ?? categoriasDe(_tipo).first.nome;
     _moeda = it?.moeda ?? store.moedaAtual;
+    if (it != null && it.moeda != 'BRL') {
+      _cotacao.text = _fmtCotacao(it.cotacao);
+      _infoCotacao = 'Cotação guardada neste lançamento';
+    } else if (_moeda != 'BRL') {
+      WidgetsBinding.instance.addPostFrameCallback((_) => _atualizarCotacao());
+    }
     if (it != null) {
       _valor.text = it.valor.toStringAsFixed(2).replaceAll('.', ',');
       _descricao.text = it.descricao;
     }
   }
 
+  static String _fmtCotacao(double v) => v.toStringAsFixed(4).replaceAll('.', ',');
+
+  Future<void> _atualizarCotacao() async {
+    final codigo = _moeda;
+    if (codigo == 'BRL') return;
+    setState(() {
+      _buscandoCotacao = true;
+      _infoCotacao = 'Buscando cotação...';
+    });
+    final c = await Cambio.obter(codigo);
+    if (!mounted || codigo != _moeda) return;
+    setState(() {
+      _buscandoCotacao = false;
+      if (c == null) {
+        _infoCotacao = 'Sem internet. Digite a cotação manualmente.';
+      } else {
+        _cotacao.text = _fmtCotacao(c.valor);
+        _infoCotacao = c.online
+            ? 'Cotação de hoje (${dataCurta(c.data)})'
+            : 'Sem internet: usando a última cotação (${dataCurta(c.data)})';
+      }
+    });
+  }
+
+  void _trocarMoeda(String codigo) {
+    setState(() {
+      _moeda = codigo;
+      _cotacao.clear();
+      _infoCotacao = '';
+    });
+    store.trocarMoeda(codigo);
+    if (codigo != 'BRL') _atualizarCotacao();
+  }
+
   @override
   void dispose() {
+    _cotacao.dispose();
     _valor.dispose();
     _descricao.dispose();
     super.dispose();
@@ -74,6 +119,16 @@ class _EditScreenState extends State<EditScreen> {
       setState(() => _erro = 'Digite um valor maior que zero');
       return;
     }
+    var cotacao = 1.0;
+    if (_moeda != 'BRL') {
+      final c = lerValor(_cotacao.text);
+      if (c == null || c <= 0) {
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+            content: Text('Informe a cotação para converter para Real')));
+        return;
+      }
+      cotacao = c;
+    }
     await store.salvar(Lancamento(
       id: widget.item?.id ?? DateTime.now().microsecondsSinceEpoch.toString(),
       tipo: _tipo,
@@ -82,6 +137,7 @@ class _EditScreenState extends State<EditScreen> {
       categoria: _categoria,
       data: _data,
       moeda: _moeda,
+      cotacao: cotacao,
     ));
     if (mounted) Navigator.pop(context);
   }
@@ -185,9 +241,7 @@ class _EditScreenState extends State<EditScreen> {
             ],
             style: TextStyle(
                 fontSize: 28, fontWeight: FontWeight.bold, color: cor),
-            onChanged: (_) {
-              if (_erro != null) setState(() => _erro = null);
-            },
+            onChanged: (_) => setState(() => _erro = null),
             decoration: InputDecoration(
               labelText: 'Valor',
               prefixText: '${moedaDe(_moeda).simbolo} ',
@@ -204,8 +258,46 @@ class _EditScreenState extends State<EditScreen> {
                 ButtonSegment(value: m.codigo, label: Text('${m.simbolo} ${m.nome}')),
             ],
             selected: {_moeda},
-            onSelectionChanged: (s) => setState(() => _moeda = s.first),
+            onSelectionChanged: (s) => _trocarMoeda(s.first),
           ),
+          if (_moeda != 'BRL') ...[
+            const SizedBox(height: 12),
+            TextField(
+              controller: _cotacao,
+              keyboardType: const TextInputType.numberWithOptions(decimal: true),
+              inputFormatters: [
+                FilteringTextInputFormatter.allow(RegExp(r'[0-9.,]')),
+              ],
+              onChanged: (_) => setState(() {}),
+              decoration: InputDecoration(
+                labelText: 'Cotação: 1 ${moedaDe(_moeda).simbolo} = R\$',
+                helperText: _infoCotacao.isEmpty ? null : _infoCotacao,
+                border: const OutlineInputBorder(),
+                suffixIcon: _buscandoCotacao
+                    ? const Padding(
+                        padding: EdgeInsets.all(12),
+                        child: SizedBox(
+                            width: 20,
+                            height: 20,
+                            child: CircularProgressIndicator(strokeWidth: 2)))
+                    : IconButton(
+                        tooltip: 'Atualizar cotação',
+                        onPressed: _atualizarCotacao,
+                        icon: const Icon(Icons.refresh)),
+              ),
+            ),
+            Builder(builder: (context) {
+              final v = lerValor(_valor.text);
+              final c = lerValor(_cotacao.text);
+              if (v == null || c == null) return const SizedBox.shrink();
+              return Padding(
+                padding: const EdgeInsets.only(top: 8, left: 4),
+                child: Text('= ${moeda(v * c)} em Real',
+                    style: TextStyle(
+                        fontWeight: FontWeight.w600, color: cor, fontSize: 16)),
+              );
+            }),
+          ],
           const SizedBox(height: 12),
           TextField(
             controller: _descricao,

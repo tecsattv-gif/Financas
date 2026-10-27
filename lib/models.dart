@@ -3,7 +3,7 @@ import 'package:flutter/material.dart';
 enum Tipo { receita, despesa }
 
 // ---------------------------------------------------------------------------
-// Moedas (cada lançamento tem a sua; os totais nunca misturam moedas)
+// Moedas: cada lançamento tem a sua; os totais são sempre convertidos para Real
 // ---------------------------------------------------------------------------
 class Moeda {
   final String codigo;
@@ -32,6 +32,9 @@ class Lancamento {
   final String categoria;
   final DateTime data;
   final String moeda; // BRL | USD | EUR
+  /// Cotação usada na conversão: quantos R$ valia 1 unidade da moeda no dia
+  /// do lançamento (guardada para o valor em Real não mudar depois). Real = 1.
+  final double cotacao;
 
   const Lancamento({
     required this.id,
@@ -41,10 +44,14 @@ class Lancamento {
     required this.categoria,
     required this.data,
     this.moeda = 'BRL',
+    this.cotacao = 1,
   });
 
-  /// Valor com sinal: receitas positivas, despesas negativas.
-  double get comSinal => tipo == Tipo.receita ? valor : -valor;
+  /// Valor convertido para Real.
+  double get valorReal => moeda == 'BRL' ? valor : valor * cotacao;
+
+  /// Valor em Real com sinal: receitas positivas, despesas negativas.
+  double get comSinal => tipo == Tipo.receita ? valorReal : -valorReal;
 
   Map<String, dynamic> toJson() => {
         'id': id,
@@ -54,6 +61,7 @@ class Lancamento {
         'categoria': categoria,
         'data': data.toIso8601String(),
         'moeda': moeda,
+        'cotacao': cotacao,
       };
 
   factory Lancamento.fromJson(Map<String, dynamic> j) => Lancamento(
@@ -65,6 +73,7 @@ class Lancamento {
         data: DateTime.parse(j['data'] as String),
         // Lançamentos antigos (antes da opção de moeda) eram em Real.
         moeda: (j['moeda'] ?? 'BRL') as String,
+        cotacao: ((j['cotacao'] ?? 1) as num).toDouble(),
       );
 }
 

@@ -29,18 +29,17 @@ Future<pw.ThemeData> _tema() async {
 Future<File> gerarPdf({
   required List<Lancamento> itens,
   required DateTime mes,
-  required String codigoMoeda,
   required ConteudoPdf conteudo,
 }) async {
-  final m = moedaDe(codigoMoeda);
-  String fmt(double v) => moeda(v, m.codigo);
+  String fmt(double v) => moeda(v);
+  final temEstrangeira = itens.any((l) => l.moeda != 'BRL');
 
   final receitas = itens.where((l) => l.tipo == Tipo.receita).toList()
     ..sort((a, b) => a.data.compareTo(b.data));
   final despesas = itens.where((l) => l.tipo == Tipo.despesa).toList()
     ..sort((a, b) => a.data.compareTo(b.data));
-  final totalR = receitas.fold<double>(0, (s, l) => s + l.valor);
-  final totalD = despesas.fold<double>(0, (s, l) => s + l.valor);
+  final totalR = receitas.fold<double>(0, (s, l) => s + l.valorReal);
+  final totalD = despesas.fold<double>(0, (s, l) => s + l.valorReal);
 
   final titulo = switch (conteudo) {
     ConteudoPdf.receitas => 'Relatório de Receitas',
@@ -64,7 +63,7 @@ Future<File> gerarPdf({
   pw.Widget porCategoria(List<Lancamento> lista, Tipo tipo, double total) {
     final mapa = <String, double>{};
     for (final l in lista) {
-      mapa[l.categoria] = (mapa[l.categoria] ?? 0) + l.valor;
+      mapa[l.categoria] = (mapa[l.categoria] ?? 0) + l.valorReal;
     }
     final ordem = mapa.entries.toList()..sort((a, b) => b.value.compareTo(a.value));
     return pw.TableHelper.fromTextArray(
@@ -91,21 +90,47 @@ Future<File> gerarPdf({
     final cor = tipo == Tipo.receita ? _verde : _vermelho;
     return pw.Column(crossAxisAlignment: pw.CrossAxisAlignment.start, children: [
       pw.TableHelper.fromTextArray(
-        headers: ['Data', 'Categoria', 'Descrição', 'Valor'],
+        headers: [
+          'Data',
+          'Categoria',
+          'Descrição',
+          if (temEstrangeira) 'Valor original',
+          'Valor (R\$)',
+        ],
         data: [
           for (final l in lista)
-            [dataCurta(l.data), l.categoria, l.descricao.isEmpty ? '-' : l.descricao, fmt(l.valor)],
+            [
+              dataCurta(l.data),
+              l.categoria,
+              l.descricao.isEmpty ? '-' : l.descricao,
+              if (temEstrangeira)
+                l.moeda == 'BRL'
+                    ? '-'
+                    : '${moeda(l.valor, l.moeda)}\n'
+                        '(1 ${moedaDe(l.moeda).simbolo} = ${moeda(l.cotacao)})',
+              fmt(l.valorReal),
+            ],
         ],
         headerStyle: pw.TextStyle(fontWeight: pw.FontWeight.bold, color: PdfColors.white),
         headerDecoration: pw.BoxDecoration(color: cor),
         cellStyle: const pw.TextStyle(fontSize: 10),
-        cellAlignments: {3: pw.Alignment.centerRight},
-        columnWidths: {
-          0: const pw.FixedColumnWidth(62),
-          1: const pw.FixedColumnWidth(95),
-          2: const pw.FlexColumnWidth(),
-          3: const pw.FixedColumnWidth(85),
-        },
+        cellAlignments: temEstrangeira
+            ? {3: pw.Alignment.centerRight, 4: pw.Alignment.centerRight}
+            : {3: pw.Alignment.centerRight},
+        columnWidths: temEstrangeira
+            ? {
+                0: const pw.FixedColumnWidth(58),
+                1: const pw.FixedColumnWidth(80),
+                2: const pw.FlexColumnWidth(),
+                3: const pw.FixedColumnWidth(95),
+                4: const pw.FixedColumnWidth(80),
+              }
+            : {
+                0: const pw.FixedColumnWidth(62),
+                1: const pw.FixedColumnWidth(95),
+                2: const pw.FlexColumnWidth(),
+                3: const pw.FixedColumnWidth(85),
+              },
         border: null,
         rowDecoration: const pw.BoxDecoration(
             border: pw.Border(bottom: pw.BorderSide(color: PdfColors.grey300, width: 0.5))),
@@ -152,7 +177,10 @@ Future<File> gerarPdf({
         pw.Text('Finanças', style: const pw.TextStyle(color: _cinza)),
       ]),
       pw.SizedBox(height: 2),
-      pw.Text('${mesAno(mes)} · ${m.nome} (${m.simbolo})',
+      pw.Text(
+          temEstrangeira
+              ? '${mesAno(mes)} · valores convertidos para Real (cotação do dia de cada lançamento)'
+              : mesAno(mes),
           style: const pw.TextStyle(color: _cinza)),
       pw.Divider(color: PdfColors.grey400),
     ]),
@@ -190,7 +218,7 @@ Future<File> gerarPdf({
     ConteudoPdf.tudo => 'Relatorio',
   };
   final nome =
-      'Financas $parte ${mes.year}-${mes.month.toString().padLeft(2, '0')} ${m.codigo}.pdf';
+      'Financas $parte ${mes.year}-${mes.month.toString().padLeft(2, '0')}.pdf';
   final f = File('${dir.path}/$nome');
   await f.writeAsBytes(await doc.save());
   return f;
