@@ -84,6 +84,24 @@ class _HomeScreenState extends State<HomeScreen> {
     }
   }
 
+  /// Gera um arquivo de backup e abre o compartilhar do Android, para o
+  /// usuário guardar onde quiser (Drive, WhatsApp, e-mail, Arquivos...).
+  Future<void> _fazerBackup() async {
+    try {
+      final d = DateTime.now();
+      String dois(int n) => n.toString().padLeft(2, '0');
+      final nome = 'financas-backup-${d.year}-${dois(d.month)}-${dois(d.day)}'
+          '_${dois(d.hour)}${dois(d.minute)}.json';
+      final dir = await getTemporaryDirectory();
+      final f = File('${dir.path}/$nome');
+      await f.writeAsString(store.backupJson(), flush: true);
+      await Share.shareXFiles([XFile(f.path, mimeType: 'application/json')],
+          subject: 'Backup do Finanças');
+    } catch (_) {
+      if (mounted) _aviso('Não foi possível gerar o backup');
+    }
+  }
+
   void _mudarMes(int delta) =>
       setState(() => _mes = DateTime(_mes.year, _mes.month + delta));
 
@@ -244,16 +262,26 @@ class _HomeScreenState extends State<HomeScreen> {
           ),
           PopupMenuButton<String>(
             onSelected: (v) {
+              if (v == 'backup') _fazerBackup();
               if (v == 'restaurar') _restaurar();
             },
             itemBuilder: (_) => const [
+              PopupMenuItem(
+                value: 'backup',
+                child: ListTile(
+                  contentPadding: EdgeInsets.zero,
+                  leading: Icon(Icons.backup_outlined),
+                  title: Text('Fazer backup'),
+                  subtitle: Text('Salvar ou enviar (Drive, WhatsApp, e-mail)'),
+                ),
+              ),
               PopupMenuItem(
                 value: 'restaurar',
                 child: ListTile(
                   contentPadding: EdgeInsets.zero,
                   leading: Icon(Icons.settings_backup_restore),
                   title: Text('Restaurar backup'),
-                  subtitle: Text('Backup automático em ${Backup.pastaLegivel}'),
+                  subtitle: Text('O automático fica em ${Backup.pastaLegivel}'),
                 ),
               ),
             ],

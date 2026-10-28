@@ -96,6 +96,9 @@ class Store extends ChangeNotifier {
 
   void _backup() => backup.salvar(_dadosBackup());
 
+  /// Conteúdo do backup (JSON) para o usuário salvar ou enviar.
+  String backupJson() => jsonEncode(_dadosBackup());
+
   /// Substitui todos os dados pelos do backup.
   /// Devolve a quantidade de lançamentos restaurados, ou lança FormatException.
   Future<int> restaurar(String conteudo) async {
