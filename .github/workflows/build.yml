@@ -26,6 +26,13 @@ jobs:
           flutter create --platforms=android --org com.tecsattv --project-name financas .
           rm -f test/widget_test.dart
 
+      - name: Icone do app
+        run: |
+          for d in icon/mipmap-*; do
+            cp "$d/ic_launcher.png" "android/app/src/main/res/$(basename $d)/ic_launcher.png"
+          done
+          rm -rf android/app/src/main/res/mipmap-anydpi-v26
+
       - name: Nome do app e permissão de internet (cotação do dólar/euro)
         run: |
           M=android/app/src/main/AndroidManifest.xml
