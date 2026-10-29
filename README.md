@@ -11,6 +11,8 @@ App Flutter de controle financeiro pessoal.
 - Nome do usuário (ícone de pessoa no topo) impresso nos PDFs
 - Exportar o mês em PDF (receitas, despesas ou completo) ou planilha (.csv)
 - Dados guardados só no celular
+- Backup automático a cada alteração em Documentos/Financas; no menu, **Fazer backup** (salvar/enviar) e **Restaurar backup** com um toque
+- Ícone com fundo transparente (`icon/`)
 
 O APK é compilado pelo GitHub Actions a cada envio para `main`
 (aba **Actions → Build Android APK → Artifacts → financas-apk**).
