@@ -17,19 +17,41 @@ class Backup {
 
   Future<void> _fila = Future.value();
 
-  /// Cada instalação grava no seu próprio arquivo, porque o Android não deixa
-  /// sobrescrever o arquivo criado por uma instalação anterior.
+  /// Nome fixo do backup: cada gravação substitui a anterior.
+  static const nomeFixo = 'financas-backup.json';
+
+  /// Usa sempre o nome fixo. Só se o arquivo for de uma instalação anterior
+  /// (o Android não deixa sobrescrever) passa a usar um nome com data.
   Future<String> _arquivo() async {
     final p = await SharedPreferences.getInstance();
-    var nome = p.getString(_keyNome);
-    if (nome == null) {
-      final d = DateTime.now();
-      String dois(int n) => n.toString().padLeft(2, '0');
-      nome = 'financas-backup-${d.year}-${dois(d.month)}-${dois(d.day)}'
-          '_${dois(d.hour)}${dois(d.minute)}${dois(d.second)}.json';
-      await p.setString(_keyNome, nome);
-    }
-    return '$pasta/$nome';
+    return '$pasta/${p.getString(_keyNome) ?? nomeFixo}';
+  }
+
+  Future<void> _usarNomeComData() async {
+    final d = DateTime.now();
+    String dois(int n) => n.toString().padLeft(2, '0');
+    await (await SharedPreferences.getInstance()).setString(
+        _keyNome,
+        'financas-backup-${d.year}-${dois(d.month)}-${dois(d.day)}'
+        '_${dois(d.hour)}${dois(d.minute)}${dois(d.second)}.json');
+  }
+
+  /// Apaga os backups anteriores da pasta (os que o Android deixar apagar),
+  /// para ficar só o atual.
+  Future<void> _limparAntigos(String atual) async {
+    try {
+      await for (final e in Directory(pasta).list()) {
+        final nome = e.path.split('/').last;
+        if (e is File &&
+            e.path != atual &&
+            nome.startsWith('financas-backup') &&
+            nome.endsWith('.json')) {
+          try {
+            await e.delete();
+          } catch (_) {}
+        }
+      }
+    } catch (_) {}
   }
 
   /// Grava o backup. Nunca lança erro: se falhar, o app segue normalmente.
@@ -42,16 +64,22 @@ class Backup {
           final caminho = await _arquivo();
           final tmp = File('$caminho.tmp');
           await tmp.writeAsString(texto, flush: true);
+          final destino = File(caminho);
+          if (await destino.exists()) await destino.delete();
           await tmp.rename(caminho);
+          await _limparAntigos(caminho);
           return;
         } catch (_) {
-          // O arquivo pode ser de uma instalação anterior (sem permissão de
-          // escrita): passa a usar um arquivo novo e tenta de novo.
-          await (await SharedPreferences.getInstance()).remove(_keyNome);
+          // O arquivo é de uma instalação anterior (sem permissão de
+          // escrita): passa a usar um arquivo com data e tenta de novo.
+          await _usarNomeComData();
         }
       }
     });
   }
+
+  /// Espera a última gravação terminar.
+  Future<void> aguardar() => _fila;
 
   /// Se a pergunta de restauração já foi feita nesta instalação.
   Future<bool> jaPerguntou() async =>

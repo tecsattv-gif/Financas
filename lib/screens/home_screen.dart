@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:path_provider/path_provider.dart';
@@ -95,6 +96,9 @@ class _HomeScreenState extends State<HomeScreen> {
       final dir = await getTemporaryDirectory();
       final f = File('${dir.path}/$nome');
       await f.writeAsString(store.backupJson(), flush: true);
+      // Atualiza também o backup da pasta (substitui o anterior).
+      backup.salvar(jsonDecode(store.backupJson()) as Map<String, dynamic>);
+      await backup.aguardar();
       await Share.shareXFiles([XFile(f.path, mimeType: 'application/json')],
           subject: 'Backup do Finanças');
     } catch (_) {
